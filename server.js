@@ -44,6 +44,9 @@ const db = new sqlite3.Database(dbPath, (err) => {
             db.run("ALTER TABLE items ADD COLUMN package_unit TEXT", function (err) {
                 // Ignore error if column already exists
             });
+            db.run("ALTER TABLE items ADD COLUMN brand TEXT", function (err) {
+                // Ignore error if column already exists
+            });
         });
     }
 });
@@ -75,6 +78,14 @@ app.delete('/api/locations/:id', (req, res) => {
     });
 });
 
+// BRANDS
+app.get('/api/brands', (req, res) => {
+    db.all('SELECT DISTINCT brand FROM items WHERE brand IS NOT NULL AND brand != "" ORDER BY brand ASC', [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ brands: rows.map(r => r.brand) });
+    });
+});
+
 // ITEMS
 app.get('/api/items', (req, res) => {
     db.all(`
@@ -89,20 +100,21 @@ app.get('/api/items', (req, res) => {
 });
 
 app.post('/api/items', (req, res) => {
-    const { name, quantity, location_id, package_size, package_unit } = req.body;
+    const { name, quantity, location_id, package_size, package_unit, brand } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
     const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
     const safeLocation = location_id || null;
     const safePackageSize = package_size && !isNaN(parseFloat(package_size)) ? parseFloat(package_size) : null;
     const validUnits = ['g', 'kg', 'l', 'ml'];
     const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
+    const safeBrand = brand ? brand.trim() : null;
 
     db.run(
-        'INSERT INTO items (name, quantity, location_id, package_size, package_unit) VALUES (?, ?, ?, ?, ?)',
-        [name, safeQuantity, safeLocation, safePackageSize, safePackageUnit],
+        'INSERT INTO items (name, quantity, location_id, package_size, package_unit, brand) VALUES (?, ?, ?, ?, ?, ?)',
+        [name, safeQuantity, safeLocation, safePackageSize, safePackageUnit, safeBrand],
         function (err) {
             if (err) return res.status(500).json({ error: err.message });
-            res.json({ id: this.lastID, name, quantity: safeQuantity, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit });
+            res.json({ id: this.lastID, name, quantity: safeQuantity, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit, brand: safeBrand });
         });
 });
 

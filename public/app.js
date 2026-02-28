@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const addItemForm = document.getElementById('add-item-form');
     const nameInput = document.getElementById('item-name');
     const quantityInput = document.getElementById('item-quantity');
+    const brandSelect = document.getElementById('item-brand');
     const locationSelect = document.getElementById('item-location');
     const packageSizeInput = document.getElementById('item-package-size');
     const packageUnitSelect = document.getElementById('item-package-unit');
@@ -20,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // API endpoints
     const API_BASE = 'api/items';
     const LOCATIONS_API = 'api/locations';
+    const BRANDS_API = 'api/brands';
 
     // State
     let items = [];
@@ -52,6 +54,59 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error(error);
         }
     };
+
+    const fetchBrands = async () => {
+        try {
+            const res = await fetch(BRANDS_API);
+            if (!res.ok) throw new Error('Failed to fetch brands');
+            const data = await res.json();
+            const currentVal = brandSelect.value;
+            brandSelect.innerHTML = '<option value="">No Brand</option>';
+            data.brands.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b;
+                opt.textContent = b;
+                brandSelect.appendChild(opt);
+            });
+            const newOpt = document.createElement('option');
+            newOpt.value = '__NEW__';
+            newOpt.textContent = '+ Add New...';
+            brandSelect.appendChild(newOpt);
+
+            if (currentVal && currentVal !== '__NEW__' && data.brands.includes(currentVal)) {
+                brandSelect.value = currentVal;
+            } else if (currentVal && currentVal !== '__NEW__' && !data.brands.includes(currentVal)) {
+                const opt = document.createElement('option');
+                opt.value = currentVal;
+                opt.textContent = currentVal;
+                brandSelect.insertBefore(opt, brandSelect.lastElementChild);
+                brandSelect.value = currentVal;
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    if (brandSelect) {
+        brandSelect.addEventListener('change', (e) => {
+            if (e.target.value === '__NEW__') {
+                const newBrand = prompt('Enter new brand name:');
+                if (newBrand && newBrand.trim() !== '') {
+                    const val = newBrand.trim();
+                    let exists = Array.from(brandSelect.options).some(o => o.value === val);
+                    if (!exists) {
+                        const opt = document.createElement('option');
+                        opt.value = val;
+                        opt.textContent = val;
+                        brandSelect.insertBefore(opt, brandSelect.lastElementChild);
+                    }
+                    brandSelect.value = val;
+                } else {
+                    brandSelect.value = '';
+                }
+            }
+        });
+    }
 
     const fetchItems = async () => {
         try {
@@ -178,9 +233,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const locName = item.location_name ? item.location_name : 'Unassigned';
                 const pkgInfo = item.package_size ? ` (${item.package_size}${item.package_unit || ''})` : '';
+                const brandInfo = item.brand ? ` <span style="font-size:0.9rem; color:var(--text-muted); margin-left: 0.5rem; padding: 0.1rem 0.4rem; background: rgba(255,255,255,0.1); border-radius: 4px;">${escapeHTML(item.brand)}</span>` : '';
 
                 tr.innerHTML = `
-                    <td style="font-weight: 600;">${escapeHTML(item.name)}${escapeHTML(pkgInfo)}</td>
+                    <td style="font-weight: 600;">${escapeHTML(item.name)}${brandInfo}${escapeHTML(pkgInfo)}</td>
                     <td style="color: var(--text-muted);">${escapeHTML(locName)}</td>
                     <td style="font-weight: 700;">${item.quantity}</td>
                     <td class="actions-cell">
@@ -223,11 +279,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     card.dataset.id = item.id;
 
                     const pkgInfo = item.package_size ? ` <span style="font-size:0.9rem; color:var(--text-muted);">(${item.package_size}${escapeHTML(item.package_unit || '')})</span>` : '';
+                    const brandInfo = item.brand ? ` <div style="font-size:0.85rem; color:var(--primary-color); margin-top: -0.5rem; margin-bottom: 0.5rem;">${escapeHTML(item.brand)}</div>` : '';
                     card.innerHTML = `
                         <div class="item-header">
                             <div class="item-name">${escapeHTML(item.name)}${pkgInfo}</div>
                             <button class="delete-btn" aria-label="Delete item">&times;</button>
                         </div>
+                        ${brandInfo}
                         <div class="item-controls">
                             <button class="qty-btn btn-minus" aria-label="Decrease quantity">-</button>
                             <div class="item-quantity">${item.quantity}</div>
@@ -277,6 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const location_id = locationSelect.value || null;
         const package_size = packageSizeInput.value ? parseFloat(packageSizeInput.value) : null;
         const package_unit = packageUnitSelect.value || null;
+        const brand = (brandSelect.value && brandSelect.value !== '__NEW__') ? brandSelect.value.trim() : null;
 
         if (!name) return;
 
@@ -284,16 +343,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(API_BASE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, quantity, location_id, package_size, package_unit })
+                body: JSON.stringify({ name, quantity, location_id, package_size, package_unit, brand })
             });
             if (!res.ok) throw new Error('Failed to add item');
 
             nameInput.value = '';
+            brandSelect.value = '';
             quantityInput.value = '1';
             packageSizeInput.value = '';
             packageUnitSelect.value = '';
             nameInput.focus();
 
+            await fetchBrands();
             await fetchItems();
         } catch (error) {
             console.error(error);
@@ -345,6 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialization
     const init = async () => {
         await fetchLocations();
+        await fetchBrands();
         await fetchItems();
     };
 
