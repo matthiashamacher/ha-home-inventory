@@ -455,11 +455,15 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         if (!currentEditingItemId) return;
 
+        const item = items.find(i => i.id === currentEditingItemId);
+        if (!item) return;
+
         const name = editNameInput.value.trim();
         const brand = editBrandSelect.value || null;
         const location_id = editLocationSelect.value || null;
         const package_size = editPackageSizeInput.value ? parseFloat(editPackageSizeInput.value) : null;
         const package_unit = editPackageUnitSelect.value || null;
+        const quantity = item.quantity;
 
         if (!name) return;
 
@@ -467,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`${API_BASE}/${currentEditingItemId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, brand, location_id, package_size, package_unit })
+                body: JSON.stringify({ name, brand, location_id, package_size, package_unit, quantity })
             });
 
             if (!res.ok) throw new Error('Failed to update item');
