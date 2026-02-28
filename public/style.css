@@ -442,3 +442,66 @@ details[open] summary {
     margin-left: 0.5rem;
     font-weight: 400;
 }
+
+/* Search Styles */
+.search-section {
+    margin-bottom: 2.5rem;
+    animation: fadeInUp 0.8s ease-out 0.3s both;
+}
+
+#search-input {
+    width: 100%;
+    padding: 1rem 1.5rem;
+    font-size: 1.1rem;
+    border-radius: 12px;
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--card-border);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    color: var(--text-color);
+}
+
+.search-results-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card-bg);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--card-border);
+}
+
+.search-results-table th,
+.search-results-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--card-border);
+}
+
+.search-results-table th {
+    background: rgba(15, 23, 42, 0.8);
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.search-results-table tbody tr {
+    transition: background 0.2s;
+}
+
+.search-results-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.search-results-table .item-controls {
+    display: inline-flex;
+    margin: 0;
+    padding: 0.25rem;
+    background: rgba(15, 23, 42, 0.3);
+}
+
+.search-results-table td.actions-cell {
+    width: 1%;
+    white-space: nowrap;
+}

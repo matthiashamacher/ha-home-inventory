@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const quantityInput = document.getElementById('item-quantity');
     const locationSelect = document.getElementById('item-location');
     const loadingEl = document.getElementById('loading');
+    const searchInput = document.getElementById('search-input');
 
     // Locations Modal Elements
     const manageLocationsBtn = document.getElementById('manage-locations-btn');
@@ -122,6 +123,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    searchInput.addEventListener('input', () => {
+        renderItems();
+    });
+
     const renderItems = () => {
         itemsList.innerHTML = '';
         if (items.length === 0) {
@@ -131,70 +136,132 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         loadingEl.classList.add('hidden');
 
-        // Group items
-        const grouped = { 'null': [] };
-        locations.forEach(loc => grouped[loc.id] = []);
-        items.forEach(item => {
-            const locId = item.location_id || 'null';
-            if (grouped[locId]) {
-                grouped[locId].push(item);
-            } else {
-                grouped['null'].push(item);
+        const query = searchInput.value.trim().toLowerCase();
+
+        if (query) {
+            // Search Mode: Flat Table
+            let filteredItems = items.filter(i => i.name.toLowerCase().includes(query));
+            filteredItems.sort((a, b) => {
+                const aName = a.name.toLowerCase();
+                const bName = b.name.toLowerCase();
+                const aIndex = aName.indexOf(query);
+                const bIndex = bName.indexOf(query);
+                if (aIndex === bIndex) return aName.localeCompare(bName);
+                return aIndex - bIndex;
+            });
+
+            if (filteredItems.length === 0) {
+                itemsList.innerHTML = '<div class="loading">No items found matching your search.</div>';
+                return;
             }
-        });
 
-        const createGrid = (itemsArray) => {
-            const grid = document.createElement('div');
-            grid.className = 'items-grid';
-            itemsArray.forEach(item => {
-                const card = document.createElement('div');
-                card.className = `item-card ${item.quantity === 0 ? 'zero-quantity' : ''}`;
-                card.dataset.id = item.id;
+            const table = document.createElement('table');
+            table.className = 'search-results-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Location</th>
+                        <th>Quantity</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            const tbody = table.querySelector('tbody');
 
-                card.innerHTML = `
-                    <div class="item-header">
-                        <div class="item-name">${escapeHTML(item.name)}</div>
-                        <button class="delete-btn" aria-label="Delete item">&times;</button>
-                    </div>
-                    <div class="item-controls">
-                        <button class="qty-btn btn-minus" aria-label="Decrease quantity">-</button>
-                        <div class="item-quantity">${item.quantity}</div>
-                        <button class="qty-btn btn-plus" aria-label="Increase quantity">+</button>
-                    </div>
+            filteredItems.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = item.quantity === 0 ? 'zero-quantity' : '';
+
+                const locName = item.location_name ? item.location_name : 'Unassigned';
+
+                tr.innerHTML = `
+                    <td style="font-weight: 600;">${escapeHTML(item.name)}</td>
+                    <td style="color: var(--text-muted);">${escapeHTML(locName)}</td>
+                    <td style="font-weight: 700;">${item.quantity}</td>
+                    <td class="actions-cell">
+                        <div class="item-controls" style="background: transparent; border: none; padding: 0;">
+                            <button class="qty-btn btn-minus" aria-label="Decrease quantity" style="background: rgba(15,23,42,0.5);">-</button>
+                            <button class="qty-btn btn-plus" aria-label="Increase quantity" style="background: rgba(15,23,42,0.5);">+</button>
+                            <button class="delete-btn" aria-label="Delete item" style="margin-left: 0.5rem; background: rgba(15,23,42,0.5);">&times;</button>
+                        </div>
+                    </td>
                 `;
 
-                const btnMinus = card.querySelector('.btn-minus');
-                const btnPlus = card.querySelector('.btn-plus');
-                const btnDelete = card.querySelector('.delete-btn');
+                tr.querySelector('.btn-minus').addEventListener('click', () => updateQuantity(item.id, Math.max(0, item.quantity - 1)));
+                tr.querySelector('.btn-plus').addEventListener('click', () => updateQuantity(item.id, item.quantity + 1));
+                tr.querySelector('.delete-btn').addEventListener('click', () => deleteItem(item.id));
 
-                btnMinus.addEventListener('click', () => updateQuantity(item.id, Math.max(0, item.quantity - 1)));
-                btnPlus.addEventListener('click', () => updateQuantity(item.id, item.quantity + 1));
-                btnDelete.addEventListener('click', () => deleteItem(item.id));
-
-                grid.appendChild(card);
+                tbody.appendChild(tr);
             });
-            return grid;
-        };
 
-        // Render each location details block
-        locations.forEach(loc => {
-            const locItems = grouped[loc.id];
-            if (locItems && locItems.length > 0) {
+            itemsList.appendChild(table);
+
+        } else {
+            // Normal Grouped Mode
+            const grouped = { 'null': [] };
+            locations.forEach(loc => grouped[loc.id] = []);
+            items.forEach(item => {
+                const locId = item.location_id || 'null';
+                if (grouped[locId]) {
+                    grouped[locId].push(item);
+                } else {
+                    grouped['null'].push(item);
+                }
+            });
+
+            const createGrid = (itemsArray) => {
+                const grid = document.createElement('div');
+                grid.className = 'items-grid';
+                itemsArray.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = `item-card ${item.quantity === 0 ? 'zero-quantity' : ''}`;
+                    card.dataset.id = item.id;
+
+                    card.innerHTML = `
+                        <div class="item-header">
+                            <div class="item-name">${escapeHTML(item.name)}</div>
+                            <button class="delete-btn" aria-label="Delete item">&times;</button>
+                        </div>
+                        <div class="item-controls">
+                            <button class="qty-btn btn-minus" aria-label="Decrease quantity">-</button>
+                            <div class="item-quantity">${item.quantity}</div>
+                            <button class="qty-btn btn-plus" aria-label="Increase quantity">+</button>
+                        </div>
+                    `;
+
+                    const btnMinus = card.querySelector('.btn-minus');
+                    const btnPlus = card.querySelector('.btn-plus');
+                    const btnDelete = card.querySelector('.delete-btn');
+
+                    btnMinus.addEventListener('click', () => updateQuantity(item.id, Math.max(0, item.quantity - 1)));
+                    btnPlus.addEventListener('click', () => updateQuantity(item.id, item.quantity + 1));
+                    btnDelete.addEventListener('click', () => deleteItem(item.id));
+
+                    grid.appendChild(card);
+                });
+                return grid;
+            };
+
+            locations.forEach(loc => {
+                const locItems = grouped[loc.id];
+                if (locItems && locItems.length > 0) {
+                    const details = document.createElement('details');
+                    details.open = true;
+                    details.innerHTML = `<summary>${escapeHTML(loc.name)} <span class="loc-count">(${locItems.length})</span></summary><div class="details-content"></div>`;
+                    details.querySelector('.details-content').appendChild(createGrid(locItems));
+                    itemsList.appendChild(details);
+                }
+            });
+
+            if (grouped['null'].length > 0) {
                 const details = document.createElement('details');
                 details.open = true;
-                details.innerHTML = `<summary>${escapeHTML(loc.name)} <span class="loc-count">(${locItems.length})</span></summary><div class="details-content"></div>`;
-                details.querySelector('.details-content').appendChild(createGrid(locItems));
+                details.innerHTML = `<summary>Unassigned <span class="loc-count">(${grouped['null'].length})</span></summary><div class="details-content"></div>`;
+                details.querySelector('.details-content').appendChild(createGrid(grouped['null']));
                 itemsList.appendChild(details);
             }
-        });
-
-        // Render Unassigned block
-        if (grouped['null'].length > 0) {
-            const details = document.createElement('details');
-            details.open = true;
-            details.innerHTML = `<summary>Unassigned <span class="loc-count">(${grouped['null'].length})</span></summary><div class="details-content"></div>`;
-            details.querySelector('.details-content').appendChild(createGrid(grouped['null']));
-            itemsList.appendChild(details);
         }
     };
 
