@@ -220,13 +220,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (query) {
             // Search Mode: Flat Table
-            let filteredItems = items.filter(i => i.name.toLowerCase().includes(query));
+            let filteredItems = items.filter(i => {
+                const nameMatch = i.name.toLowerCase().includes(query);
+                const brandMatch = i.brand && i.brand.toLowerCase().includes(query);
+                return nameMatch || brandMatch;
+            });
+
             filteredItems.sort((a, b) => {
                 const aName = a.name.toLowerCase();
                 const bName = b.name.toLowerCase();
-                const aIndex = aName.indexOf(query);
-                const bIndex = bName.indexOf(query);
-                if (aIndex === bIndex) return aName.localeCompare(bName);
+                const aBrand = (a.brand || '').toLowerCase();
+                const bBrand = (b.brand || '').toLowerCase();
+
+                const aNameIndex = aName.indexOf(query);
+                const bNameIndex = bName.indexOf(query);
+                const aBrandIndex = aBrand.indexOf(query);
+                const bBrandIndex = bBrand.indexOf(query);
+
+                // Get the best index (lowest non-negative) for each
+                const getBestIndex = (ni, bi) => {
+                    if (ni === -1) return bi;
+                    if (bi === -1) return ni;
+                    return Math.min(ni, bi);
+                };
+
+                const aIndex = getBestIndex(aNameIndex, aBrandIndex);
+                const bIndex = getBestIndex(bNameIndex, bBrandIndex);
+
+                if (aIndex === bIndex) {
+                    return aName.localeCompare(bName);
+                }
                 return aIndex - bIndex;
             });
 
@@ -259,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const brandInfo = item.brand ? ` <span style="font-size:0.9rem; color:var(--text-muted); margin-left: 0.5rem; padding: 0.1rem 0.4rem; background: rgba(255,255,255,0.1); border-radius: 4px;">${escapeHTML(item.brand)}</span>` : '';
 
                 tr.innerHTML = `
-                    <td style="font-weight: 600;">${escapeHTML(item.name)}${brandInfo}${escapeHTML(pkgInfo)}</td>
+                    <td style="font-weight: 600;">${escapeHTML(item.name)}${escapeHTML(pkgInfo)}${brandInfo}</td>
                     <td style="color: var(--text-muted);">${escapeHTML(locName)}</td>
                     <td style="font-weight: 700;">${item.quantity}</td>
                     <td class="actions-cell">
