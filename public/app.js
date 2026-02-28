@@ -3,18 +3,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const addItemForm = document.getElementById('add-item-form');
     const nameInput = document.getElementById('item-name');
     const quantityInput = document.getElementById('item-quantity');
+    const locationSelect = document.getElementById('item-location');
     const loadingEl = document.getElementById('loading');
 
-    // API endpoint relative to current location
+    // Locations Modal Elements
+    const manageLocationsBtn = document.getElementById('manage-locations-btn');
+    const locationsModal = document.getElementById('locations-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const addLocationForm = document.getElementById('add-location-form');
+    const locationNameInput = document.getElementById('location-name');
+    const locationsListEl = document.getElementById('locations-list');
+
+    // API endpoints
     const API_BASE = 'api/items';
+    const LOCATIONS_API = 'api/locations';
 
     // State
     let items = [];
+    let locations = [];
 
-    // Fetch items from server
+    // Setup Modal
+    manageLocationsBtn.addEventListener('click', () => {
+        locationsModal.classList.remove('hidden');
+    });
+    closeModalBtn.addEventListener('click', () => {
+        locationsModal.classList.add('hidden');
+    });
+
+    // Close modal on background click
+    locationsModal.addEventListener('click', (e) => {
+        if (e.target === locationsModal) {
+            locationsModal.classList.add('hidden');
+        }
+    });
+
+    const fetchLocations = async () => {
+        try {
+            const res = await fetch(LOCATIONS_API);
+            if (!res.ok) throw new Error('Failed to fetch locations');
+            const data = await res.json();
+            locations = data.locations;
+            renderLocations();
+            updateLocationSelect();
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
     const fetchItems = async () => {
         try {
-            // Using relative path handles ingress cases in Home Assistant since the add-on runs under a subpath
             const res = await fetch(API_BASE);
             if (!res.ok) throw new Error('Failed to fetch items');
             const data = await res.json();
@@ -27,7 +64,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Render items to DOM
+    const updateLocationSelect = () => {
+        // preserve current selection
+        const currentVal = locationSelect.value;
+        locationSelect.innerHTML = '<option value="">Unassigned Location</option>';
+        locations.forEach(loc => {
+            const opt = document.createElement('option');
+            opt.value = loc.id;
+            opt.textContent = escapeHTML(loc.name);
+            locationSelect.appendChild(opt);
+        });
+        if (currentVal) locationSelect.value = currentVal;
+    };
+
+    const renderLocations = () => {
+        locationsListEl.innerHTML = '';
+        locations.forEach(loc => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <span>${escapeHTML(loc.name)}</span>
+                <button class="delete-btn" data-id="${loc.id}" aria-label="Delete location">&times;</button>
+            `;
+            li.querySelector('.delete-btn').addEventListener('click', () => deleteLocation(loc.id));
+            locationsListEl.appendChild(li);
+        });
+    };
+
+    addLocationForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = locationNameInput.value.trim();
+        if (!name) return;
+        try {
+            const res = await fetch(LOCATIONS_API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (!res.ok) throw new Error('Failed to add location');
+            locationNameInput.value = '';
+            await fetchLocations();
+        } catch (error) {
+            console.error(error);
+            alert('Failed to add location. It might already exist.');
+        }
+    });
+
+    const deleteLocation = async (id) => {
+        if (!confirm('Are you sure you want to delete this location? Items in it will become unassigned.')) return;
+        try {
+            const res = await fetch(`${LOCATIONS_API}/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed to delete location');
+            await fetchLocations();
+            await fetchItems();
+        } catch (error) {
+            console.error(error);
+            alert('Failed to delete location');
+        }
+    };
+
     const renderItems = () => {
         itemsList.innerHTML = '';
         if (items.length === 0) {
@@ -35,36 +129,73 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingEl.classList.remove('hidden');
             return;
         }
-
         loadingEl.classList.add('hidden');
 
+        // Group items
+        const grouped = { 'null': [] };
+        locations.forEach(loc => grouped[loc.id] = []);
         items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = `item-card ${item.quantity === 0 ? 'zero-quantity' : ''}`;
-            card.dataset.id = item.id;
-
-            card.innerHTML = `
-                <div class="item-header">
-                    <div class="item-name">${escapeHTML(item.name)}</div>
-                    <button class="delete-btn" aria-label="Delete item">&times;</button>
-                </div>
-                <div class="item-controls">
-                    <button class="qty-btn btn-minus" aria-label="Decrease quantity">-</button>
-                    <div class="item-quantity">${item.quantity}</div>
-                    <button class="qty-btn btn-plus" aria-label="Increase quantity">+</button>
-                </div>
-            `;
-
-            const btnMinus = card.querySelector('.btn-minus');
-            const btnPlus = card.querySelector('.btn-plus');
-            const btnDelete = card.querySelector('.delete-btn');
-
-            btnMinus.addEventListener('click', () => updateQuantity(item.id, Math.max(0, item.quantity - 1)));
-            btnPlus.addEventListener('click', () => updateQuantity(item.id, item.quantity + 1));
-            btnDelete.addEventListener('click', () => deleteItem(item.id));
-
-            itemsList.appendChild(card);
+            const locId = item.location_id || 'null';
+            if (grouped[locId]) {
+                grouped[locId].push(item);
+            } else {
+                grouped['null'].push(item);
+            }
         });
+
+        const createGrid = (itemsArray) => {
+            const grid = document.createElement('div');
+            grid.className = 'items-grid';
+            itemsArray.forEach(item => {
+                const card = document.createElement('div');
+                card.className = `item-card ${item.quantity === 0 ? 'zero-quantity' : ''}`;
+                card.dataset.id = item.id;
+
+                card.innerHTML = `
+                    <div class="item-header">
+                        <div class="item-name">${escapeHTML(item.name)}</div>
+                        <button class="delete-btn" aria-label="Delete item">&times;</button>
+                    </div>
+                    <div class="item-controls">
+                        <button class="qty-btn btn-minus" aria-label="Decrease quantity">-</button>
+                        <div class="item-quantity">${item.quantity}</div>
+                        <button class="qty-btn btn-plus" aria-label="Increase quantity">+</button>
+                    </div>
+                `;
+
+                const btnMinus = card.querySelector('.btn-minus');
+                const btnPlus = card.querySelector('.btn-plus');
+                const btnDelete = card.querySelector('.delete-btn');
+
+                btnMinus.addEventListener('click', () => updateQuantity(item.id, Math.max(0, item.quantity - 1)));
+                btnPlus.addEventListener('click', () => updateQuantity(item.id, item.quantity + 1));
+                btnDelete.addEventListener('click', () => deleteItem(item.id));
+
+                grid.appendChild(card);
+            });
+            return grid;
+        };
+
+        // Render each location details block
+        locations.forEach(loc => {
+            const locItems = grouped[loc.id];
+            if (locItems && locItems.length > 0) {
+                const details = document.createElement('details');
+                details.open = true;
+                details.innerHTML = `<summary>${escapeHTML(loc.name)} <span class="loc-count">(${locItems.length})</span></summary><div class="details-content"></div>`;
+                details.querySelector('.details-content').appendChild(createGrid(locItems));
+                itemsList.appendChild(details);
+            }
+        });
+
+        // Render Unassigned block
+        if (grouped['null'].length > 0) {
+            const details = document.createElement('details');
+            details.open = true;
+            details.innerHTML = `<summary>Unassigned <span class="loc-count">(${grouped['null'].length})</span></summary><div class="details-content"></div>`;
+            details.querySelector('.details-content').appendChild(createGrid(grouped['null']));
+            itemsList.appendChild(details);
+        }
     };
 
     // Add new item
@@ -72,6 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const name = nameInput.value.trim();
         const quantity = parseInt(quantityInput.value, 10);
+        const location_id = locationSelect.value || null;
 
         if (!name) return;
 
@@ -79,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(API_BASE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, quantity })
+                body: JSON.stringify({ name, quantity, location_id })
             });
             if (!res.ok) throw new Error('Failed to add item');
 
@@ -111,6 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error(error);
             alert('Failed to update item quantity');
+            // Revert state if failed
             await fetchItems();
         }
     };
@@ -134,5 +267,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return div.innerHTML;
     };
 
-    fetchItems();
+    // Initialization
+    const init = async () => {
+        await fetchLocations();
+        await fetchItems();
+    };
+
+    init();
 });

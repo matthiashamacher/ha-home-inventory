@@ -23,30 +23,74 @@ const db = new sqlite3.Database(dbPath, (err) => {
         console.error('Error opening database', err.message);
     } else {
         console.log('Connected to the SQLite database.');
-        db.run(`CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            quantity INTEGER NOT NULL DEFAULT 1,
-            added_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`);
+        db.serialize(() => {
+            db.run(`CREATE TABLE IF NOT EXISTS locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE
+            )`);
+            db.run(`CREATE TABLE IF NOT EXISTS items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                quantity INTEGER NOT NULL DEFAULT 1,
+                added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL
+            )`);
+            db.run("ALTER TABLE items ADD COLUMN location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL", function (err) {
+                // Ignore error if column already exists
+            });
+        });
     }
 });
 
+// LOCATIONS
+app.get('/api/locations', (req, res) => {
+    db.all('SELECT * FROM locations ORDER BY name ASC', [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ locations: rows });
+    });
+});
+
+app.post('/api/locations', (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: "Name is required" });
+
+    db.run('INSERT INTO locations (name) VALUES (?)', [name], function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ id: this.lastID, name });
+    });
+});
+
+app.delete('/api/locations/:id', (req, res) => {
+    const { id } = req.params;
+    db.run('DELETE FROM locations WHERE id = ?', id, function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        db.run('UPDATE items SET location_id = NULL WHERE location_id = ?', id);
+        res.json({ id });
+    });
+});
+
+// ITEMS
 app.get('/api/items', (req, res) => {
-    db.all('SELECT * FROM items ORDER BY name ASC', [], (err, rows) => {
+    db.all(`
+        SELECT items.*, locations.name as location_name 
+        FROM items 
+        LEFT JOIN locations ON items.location_id = locations.id 
+        ORDER BY items.name ASC
+    `, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ items: rows });
     });
 });
 
 app.post('/api/items', (req, res) => {
-    const { name, quantity } = req.body;
+    const { name, quantity, location_id } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
     const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
+    const safeLocation = location_id || null;
 
-    db.run('INSERT INTO items (name, quantity) VALUES (?, ?)', [name, safeQuantity], function (err) {
+    db.run('INSERT INTO items (name, quantity, location_id) VALUES (?, ?, ?)', [name, safeQuantity, safeLocation], function (err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, name, quantity: safeQuantity });
+        res.json({ id: this.lastID, name, quantity: safeQuantity, location_id: safeLocation });
     });
 });
 

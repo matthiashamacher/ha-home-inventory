@@ -14,24 +14,49 @@
         <header>
             <h1>Home Inventory</h1>
             <p>Track your supplies easily</p>
+            <button id="manage-locations-btn" class="btn-secondary" style="margin-top: 1rem;">Manage Locations</button>
         </header>
 
         <section class="add-item-section">
             <form id="add-item-form">
                 <input type="text" id="item-name" placeholder="E.g., Apples, Wine, Flour..." required
                     autocomplete="off">
+                <select id="item-location" class="location-select">
+                    <option value="">Unassigned Location</option>
+                </select>
                 <input type="number" id="item-quantity" placeholder="Qty" value="1" min="0" required>
                 <button type="submit" class="btn-primary">Add Item</button>
             </form>
         </section>
 
         <section class="items-section">
-            <div id="items-list" class="items-grid">
-                <!-- Items will be injected here via JS -->
+            <div id="items-list" class="items-container">
+                <!-- Items grouped by location will be injected here via JS -->
             </div>
             <div id="loading" class="loading">Loading items...</div>
         </section>
     </div>
+
+    <!-- Locations Modal -->
+    <div id="locations-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Manage Locations</h2>
+                <button id="close-modal-btn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="add-location-form">
+                    <input type="text" id="location-name" placeholder="New Location Name..." required
+                        autocomplete="off">
+                    <button type="submit" class="btn-primary">Add</button>
+                </form>
+                <ul id="locations-list" class="locations-list">
+                    <!-- Locations list via JS -->
+                </ul>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 
