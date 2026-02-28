@@ -73,6 +73,40 @@
         </div>
     </div>
 
+    <!-- Edit Item Modal -->
+    <div id="edit-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Item</h2>
+                <button id="close-edit-modal-btn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-item-form-modal">
+                    <div style="display: flex; flex-direction: column; gap: 1rem;">
+                        <input type="text" id="edit-item-name" placeholder="Item Name" required autocomplete="off">
+                        <select id="edit-item-brand" class="location-select">
+                            <option value="">No Brand</option>
+                        </select>
+                        <select id="edit-item-location" class="location-select">
+                            <option value="">Unassigned Location</option>
+                        </select>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="number" id="edit-item-package-size" placeholder="Size" min="0" step="any">
+                            <select id="edit-item-package-unit" class="location-select" style="width: 100px;">
+                                <option value="">Unit</option>
+                                <option value="g">g</option>
+                                <option value="kg">kg</option>
+                                <option value="ml">ml</option>
+                                <option value="l">l</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 

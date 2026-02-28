@@ -120,15 +120,33 @@ app.post('/api/items', (req, res) => {
 
 app.put('/api/items/:id', (req, res) => {
     const { id } = req.params;
-    const { quantity } = req.body;
-    if (quantity === undefined || quantity === null) {
-        return res.status(400).json({ error: "Quantity is required" });
+    const { name, quantity, brand, location_id, package_size, package_unit } = req.body;
+
+    // Handle quantity-only update (legacy/fast update)
+    if (quantity !== undefined && name === undefined) {
+        return db.run('UPDATE items SET quantity = ? WHERE id = ?', [parseInt(quantity), id], function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ id, quantity: parseInt(quantity) });
+        });
     }
 
-    db.run('UPDATE items SET quantity = ? WHERE id = ?', [parseInt(quantity), id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id, quantity: parseInt(quantity) });
-    });
+    // Handle full item update
+    if (!name) return res.status(400).json({ error: "Name is required for full update" });
+    const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
+    const safeLocation = location_id || null;
+    const safePackageSize = package_size && !isNaN(parseFloat(package_size)) ? parseFloat(package_size) : null;
+    const validUnits = ['g', 'kg', 'l', 'ml'];
+    const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
+    const safeBrand = brand ? brand.trim() : null;
+
+    db.run(
+        'UPDATE items SET name = ?, quantity = ?, brand = ?, location_id = ?, package_size = ?, package_unit = ? WHERE id = ?',
+        [name, safeQuantity, safeBrand, safeLocation, safePackageSize, safePackageUnit, id],
+        function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ id, name, quantity: safeQuantity, brand: safeBrand, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit });
+        }
+    );
 });
 
 app.delete('/api/items/:id', (req, res) => {

@@ -167,19 +167,34 @@ button {
     word-break: break-word;
 }
 
-.delete-btn {
+.item-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.action-btn {
     background: transparent;
     color: var(--text-muted);
     padding: 0.25rem;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     line-height: 1;
     border-radius: 4px;
+    cursor: pointer;
+    transition: var(--transition);
 }
 
-.delete-btn:hover {
+.action-btn:hover {
+    transform: scale(1.1);
+}
+
+.action-btn.delete:hover {
     color: var(--danger-color);
     background: rgba(239, 68, 68, 0.1);
-    transform: scale(1.1);
+}
+
+.action-btn.edit:hover {
+    color: var(--primary-color);
+    background: rgba(59, 130, 246, 0.1);
 }
 
 .item-controls {

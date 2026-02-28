@@ -10,6 +10,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingEl = document.getElementById('loading');
     const searchInput = document.getElementById('search-input');
 
+    // Edit Modal Elements
+    const editModal = document.getElementById('edit-modal');
+    const closeEditModalBtn = document.getElementById('close-edit-modal-btn');
+    const editItemForm = document.getElementById('edit-item-form-modal');
+    const editNameInput = document.getElementById('edit-item-name');
+    const editBrandSelect = document.getElementById('edit-item-brand');
+    const editLocationSelect = document.getElementById('edit-item-location');
+    const editPackageSizeInput = document.getElementById('edit-item-package-size');
+    const editPackageUnitSelect = document.getElementById('edit-item-package-unit');
+    let currentEditingItemId = null;
+
     // Locations Modal Elements
     const manageLocationsBtn = document.getElementById('manage-locations-btn');
     const locationsModal = document.getElementById('locations-modal');
@@ -39,6 +50,16 @@ document.addEventListener('DOMContentLoaded', () => {
     locationsModal.addEventListener('click', (e) => {
         if (e.target === locationsModal) {
             locationsModal.classList.add('hidden');
+        }
+    });
+
+    closeEditModalBtn.addEventListener('click', () => {
+        editModal.classList.add('hidden');
+    });
+
+    editModal.addEventListener('click', (e) => {
+        if (e.target === editModal) {
+            editModal.classList.add('hidden');
         }
     });
 
@@ -125,14 +146,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateLocationSelect = () => {
         // preserve current selection
         const currentVal = locationSelect.value;
-        locationSelect.innerHTML = '<option value="">Unassigned Location</option>';
-        locations.forEach(loc => {
-            const opt = document.createElement('option');
-            opt.value = loc.id;
-            opt.textContent = escapeHTML(loc.name);
-            locationSelect.appendChild(opt);
-        });
+        const currentEditVal = editLocationSelect.value;
+
+        const optionsHTML = '<option value="">Unassigned Location</option>' +
+            locations.map(loc => `<option value="${loc.id}">${escapeHTML(loc.name)}</option>`).join('');
+
+        locationSelect.innerHTML = optionsHTML;
+        editLocationSelect.innerHTML = optionsHTML;
+
         if (currentVal) locationSelect.value = currentVal;
+        if (currentEditVal) editLocationSelect.value = currentEditVal;
     };
 
     const renderLocations = () => {
@@ -240,17 +263,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td style="color: var(--text-muted);">${escapeHTML(locName)}</td>
                     <td style="font-weight: 700;">${item.quantity}</td>
                     <td class="actions-cell">
-                        <div class="item-controls" style="background: transparent; border: none; padding: 0;">
-                            <button class="qty-btn btn-minus" aria-label="Decrease quantity" style="background: rgba(15,23,42,0.5);">-</button>
-                            <button class="qty-btn btn-plus" aria-label="Increase quantity" style="background: rgba(15,23,42,0.5);">+</button>
-                            <button class="delete-btn" aria-label="Delete item" style="margin-left: 0.5rem; background: rgba(15,23,42,0.5);">&times;</button>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div class="item-controls" style="background: transparent; border: none; padding: 0;">
+                                <button class="qty-btn btn-minus" aria-label="Decrease quantity" style="background: rgba(15,23,42,0.5);">-</button>
+                                <button class="qty-btn btn-plus" aria-label="Increase quantity" style="background: rgba(15,23,42,0.5);">+</button>
+                            </div>
+                            <div class="item-actions">
+                                <button class="action-btn edit" title="Edit item">✏️</button>
+                                <button class="action-btn delete" title="Delete item">🗑️</button>
+                            </div>
                         </div>
                     </td>
                 `;
 
                 tr.querySelector('.btn-minus').addEventListener('click', () => updateQuantity(item.id, Math.max(0, item.quantity - 1)));
                 tr.querySelector('.btn-plus').addEventListener('click', () => updateQuantity(item.id, item.quantity + 1));
-                tr.querySelector('.delete-btn').addEventListener('click', () => deleteItem(item.id));
+                tr.querySelector('.edit').addEventListener('click', () => openEditModal(item));
+                tr.querySelector('.delete').addEventListener('click', () => deleteItem(item.id));
 
                 tbody.appendChild(tr);
             });
@@ -283,7 +312,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     card.innerHTML = `
                         <div class="item-header">
                             <div class="item-name">${escapeHTML(item.name)}${pkgInfo}</div>
-                            <button class="delete-btn" aria-label="Delete item">&times;</button>
+                            <div class="item-actions">
+                                <button class="action-btn edit" title="Edit item">✏️</button>
+                                <button class="action-btn delete" title="Delete item">🗑️</button>
+                            </div>
                         </div>
                         ${brandInfo}
                         <div class="item-controls">
@@ -295,10 +327,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const btnMinus = card.querySelector('.btn-minus');
                     const btnPlus = card.querySelector('.btn-plus');
-                    const btnDelete = card.querySelector('.delete-btn');
+                    const btnEdit = card.querySelector('.edit');
+                    const btnDelete = card.querySelector('.delete');
 
                     btnMinus.addEventListener('click', () => updateQuantity(item.id, Math.max(0, item.quantity - 1)));
                     btnPlus.addEventListener('click', () => updateQuantity(item.id, item.quantity + 1));
+                    btnEdit.addEventListener('click', () => openEditModal(item));
                     btnDelete.addEventListener('click', () => deleteItem(item.id));
 
                     grid.appendChild(card);
@@ -359,6 +393,68 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error(error);
             alert('Failed to add item');
+        }
+    });
+
+    const openEditModal = (item) => {
+        currentEditingItemId = item.id;
+        editNameInput.value = item.name;
+
+        // Populate brand select and select current brand
+        const brands = Array.from(brandSelect.options)
+            .map(o => o.value)
+            .filter(v => v !== '__NEW__' && v !== '');
+
+        editBrandSelect.innerHTML = '<option value="">No Brand</option>' +
+            brands.map(b => `<option value="${b}">${escapeHTML(b)}</option>`).join('');
+
+        if (item.brand) {
+            // Check if brand is in current list, if not add it temporarily
+            if (!brands.includes(item.brand)) {
+                const opt = document.createElement('option');
+                opt.value = item.brand;
+                opt.textContent = item.brand;
+                editBrandSelect.appendChild(opt);
+            }
+            editBrandSelect.value = item.brand;
+        } else {
+            editBrandSelect.value = '';
+        }
+
+        editLocationSelect.value = item.location_id || '';
+        editPackageSizeInput.value = item.package_size || '';
+        editPackageUnitSelect.value = item.package_unit || '';
+
+        editModal.classList.remove('hidden');
+    };
+
+    editItemForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!currentEditingItemId) return;
+
+        const name = editNameInput.value.trim();
+        const brand = editBrandSelect.value || null;
+        const location_id = editLocationSelect.value || null;
+        const package_size = editPackageSizeInput.value ? parseFloat(editPackageSizeInput.value) : null;
+        const package_unit = editPackageUnitSelect.value || null;
+
+        if (!name) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/${currentEditingItemId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, brand, location_id, package_size, package_unit })
+            });
+
+            if (!res.ok) throw new Error('Failed to update item');
+
+            editModal.classList.add('hidden');
+            await fetchItems();
+            await fetchBrands();
+        } catch (error) {
+            console.error(error);
+            alert('Failed to update item');
         }
     });
 
