@@ -38,6 +38,12 @@ const db = new sqlite3.Database(dbPath, (err) => {
             db.run("ALTER TABLE items ADD COLUMN location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL", function (err) {
                 // Ignore error if column already exists
             });
+            db.run("ALTER TABLE items ADD COLUMN package_size REAL", function (err) {
+                // Ignore error if column already exists
+            });
+            db.run("ALTER TABLE items ADD COLUMN package_unit TEXT", function (err) {
+                // Ignore error if column already exists
+            });
         });
     }
 });
@@ -83,15 +89,21 @@ app.get('/api/items', (req, res) => {
 });
 
 app.post('/api/items', (req, res) => {
-    const { name, quantity, location_id } = req.body;
+    const { name, quantity, location_id, package_size, package_unit } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
     const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
     const safeLocation = location_id || null;
+    const safePackageSize = package_size && !isNaN(parseFloat(package_size)) ? parseFloat(package_size) : null;
+    const validUnits = ['g', 'kg', 'l', 'ml'];
+    const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
 
-    db.run('INSERT INTO items (name, quantity, location_id) VALUES (?, ?, ?)', [name, safeQuantity, safeLocation], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, name, quantity: safeQuantity, location_id: safeLocation });
-    });
+    db.run(
+        'INSERT INTO items (name, quantity, location_id, package_size, package_unit) VALUES (?, ?, ?, ?, ?)',
+        [name, safeQuantity, safeLocation, safePackageSize, safePackageUnit],
+        function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ id: this.lastID, name, quantity: safeQuantity, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit });
+        });
 });
 
 app.put('/api/items/:id', (req, res) => {

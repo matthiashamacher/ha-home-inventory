@@ -4,6 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const nameInput = document.getElementById('item-name');
     const quantityInput = document.getElementById('item-quantity');
     const locationSelect = document.getElementById('item-location');
+    const packageSizeInput = document.getElementById('item-package-size');
+    const packageUnitSelect = document.getElementById('item-package-unit');
     const loadingEl = document.getElementById('loading');
     const searchInput = document.getElementById('search-input');
 
@@ -175,9 +177,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 tr.className = item.quantity === 0 ? 'zero-quantity' : '';
 
                 const locName = item.location_name ? item.location_name : 'Unassigned';
+                const pkgInfo = item.package_size ? ` (${item.package_size}${item.package_unit || ''})` : '';
 
                 tr.innerHTML = `
-                    <td style="font-weight: 600;">${escapeHTML(item.name)}</td>
+                    <td style="font-weight: 600;">${escapeHTML(item.name)}${escapeHTML(pkgInfo)}</td>
                     <td style="color: var(--text-muted);">${escapeHTML(locName)}</td>
                     <td style="font-weight: 700;">${item.quantity}</td>
                     <td class="actions-cell">
@@ -219,9 +222,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     card.className = `item-card ${item.quantity === 0 ? 'zero-quantity' : ''}`;
                     card.dataset.id = item.id;
 
+                    const pkgInfo = item.package_size ? ` <span style="font-size:0.9rem; color:var(--text-muted);">(${item.package_size}${escapeHTML(item.package_unit || '')})</span>` : '';
                     card.innerHTML = `
                         <div class="item-header">
-                            <div class="item-name">${escapeHTML(item.name)}</div>
+                            <div class="item-name">${escapeHTML(item.name)}${pkgInfo}</div>
                             <button class="delete-btn" aria-label="Delete item">&times;</button>
                         </div>
                         <div class="item-controls">
@@ -271,6 +275,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = nameInput.value.trim();
         const quantity = parseInt(quantityInput.value, 10);
         const location_id = locationSelect.value || null;
+        const package_size = packageSizeInput.value ? parseFloat(packageSizeInput.value) : null;
+        const package_unit = packageUnitSelect.value || null;
 
         if (!name) return;
 
@@ -278,12 +284,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(API_BASE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, quantity, location_id })
+                body: JSON.stringify({ name, quantity, location_id, package_size, package_unit })
             });
             if (!res.ok) throw new Error('Failed to add item');
 
             nameInput.value = '';
             quantityInput.value = '1';
+            packageSizeInput.value = '';
+            packageUnitSelect.value = '';
             nameInput.focus();
 
             await fetchItems();

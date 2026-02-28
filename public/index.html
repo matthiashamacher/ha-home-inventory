@@ -24,6 +24,15 @@
                 <select id="item-location" class="location-select">
                     <option value="">Unassigned Location</option>
                 </select>
+                <input type="number" id="item-package-size" placeholder="Size (optional)" min="0" step="any"
+                    style="width: 120px;">
+                <select id="item-package-unit" class="location-select" style="width: 80px;">
+                    <option value="">Unit</option>
+                    <option value="g">g</option>
+                    <option value="kg">kg</option>
+                    <option value="ml">ml</option>
+                    <option value="l">l</option>
+                </select>
                 <input type="number" id="item-quantity" placeholder="Qty" value="1" min="0" required>
                 <button type="submit" class="btn-primary">Add Item</button>
             </form>
