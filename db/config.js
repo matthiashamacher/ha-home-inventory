@@ -1,16 +1,12 @@
 const fs = require('fs');
 const yaml = require('js-yaml');
-const path = require('path');
 
 const HA_CONFIG_PATH = '/config/configuration.yaml';
 const HA_DEFAULT_DB = '/config/home-assistant_v2.db';
-const LOCAL_FALLBACK_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, '..', 'data');
-const LOCAL_FALLBACK_DB = path.join(LOCAL_FALLBACK_DIR, 'local.db');
 
 function getRecorderDbUrl() {
     if (!fs.existsSync(HA_CONFIG_PATH)) {
-        console.log('Home Assistant configuration not found, using local SQLite fallback.');
-        return null;
+        throw new Error('Home Assistant configuration not found. This add-on must run within Home Assistant.');
     }
 
     try {
@@ -24,8 +20,7 @@ function getRecorderDbUrl() {
         console.log('No recorder.db_url configured, using Home Assistant default SQLite.');
         return `sqlite:///${HA_DEFAULT_DB}`;
     } catch (err) {
-        console.error('Error reading Home Assistant configuration:', err.message);
-        return null;
+        throw new Error(`Error reading Home Assistant configuration: ${err.message}`);
     }
 }
 
@@ -80,24 +75,6 @@ function parsePostgresUrl(dbUrl) {
 function getKnexConfig() {
     const dbUrl = getRecorderDbUrl();
 
-    if (!dbUrl) {
-        // Local development fallback
-        if (!fs.existsSync(LOCAL_FALLBACK_DIR)) {
-            fs.mkdirSync(LOCAL_FALLBACK_DIR, { recursive: true });
-        }
-        return {
-            client: 'better-sqlite3',
-            connection: { filename: LOCAL_FALLBACK_DB },
-            useNullAsDefault: true,
-            pool: {
-                afterCreate: (conn, done) => {
-                    conn.pragma('journal_mode = WAL');
-                    done(null, conn);
-                }
-            }
-        };
-    }
-
     if (dbUrl.startsWith('sqlite:')) {
         return parseSqliteUrl(dbUrl);
     }
@@ -110,15 +87,7 @@ function getKnexConfig() {
         return parsePostgresUrl(dbUrl);
     }
 
-    console.error(`Unsupported database URL scheme: ${dbUrl}. Falling back to local SQLite.`);
-    if (!fs.existsSync(LOCAL_FALLBACK_DIR)) {
-        fs.mkdirSync(LOCAL_FALLBACK_DIR, { recursive: true });
-    }
-    return {
-        client: 'better-sqlite3',
-        connection: { filename: LOCAL_FALLBACK_DB },
-        useNullAsDefault: true
-    };
+    throw new Error(`Unsupported database URL scheme: ${dbUrl}`);
 }
 
-module.exports = { getKnexConfig, LOCAL_FALLBACK_DB };
+module.exports = { getKnexConfig };

@@ -3,7 +3,6 @@ const path = require('path');
 const cors = require('cors');
 const db = require('./db/connection');
 const { ensureSchema, LOCATIONS_TABLE, ITEMS_TABLE } = require('./db/schema');
-const { migrateFromOldDb } = require('./db/migrate');
 
 const app = express();
 const PORT = process.env.PORT || 8099;
@@ -15,7 +14,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Initialize database
 async function initDb() {
     await ensureSchema(db);
-    await migrateFromOldDb(db);
     console.log('Database ready.');
 }
 
