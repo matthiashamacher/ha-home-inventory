@@ -1,6 +1,6 @@
 name: "Home Inventory"
 description: "Tracks supplies, capable of setting quantity to keep track of items."
-version: "1.5.2"
+version: "2.0.0"
 slug: "home_inventory"
 init: false
 arch:
@@ -11,6 +11,7 @@ arch:
   - i386
 map:
   - share:rw
+  - config:rw
 options:
   port: 8099
 schema:

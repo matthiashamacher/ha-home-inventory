@@ -3,11 +3,16 @@ FROM ${BUILD_FROM}
 
 ENV LANG C.UTF-8
 
-# Install nodejs, npm, sqlite3
+# Install nodejs, npm, and build dependencies for native addons
 RUN apk add --no-cache \
     nodejs \
     npm \
-    sqlite
+    sqlite \
+    python3 \
+    make \
+    g++ \
+    mariadb-connector-c-dev \
+    postgresql-dev
 
 # Create app directory
 WORKDIR /app
@@ -17,6 +22,7 @@ COPY package.json ./
 RUN npm install --omit=dev
 
 COPY server.js run.sh ./
+COPY db ./db
 COPY public ./public
 
 # Make run.sh executable

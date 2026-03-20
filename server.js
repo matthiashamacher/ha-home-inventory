@@ -1,8 +1,9 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const cors = require('cors');
-const fs = require('fs');
+const db = require('./db/connection');
+const { ensureSchema, LOCATIONS_TABLE, ITEMS_TABLE } = require('./db/schema');
+const { migrateFromOldDb } = require('./db/migrate');
 
 const app = express();
 const PORT = process.env.PORT || 8099;
@@ -11,97 +12,92 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Determine database path
-const dataDir = fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+// Initialize database
+async function initDb() {
+    await ensureSchema(db);
+    await migrateFromOldDb(db);
+    console.log('Database ready.');
 }
-const dbPath = path.join(dataDir, 'local.db');
 
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error opening database', err.message);
-    } else {
-        console.log('Connected to the SQLite database.');
-        db.serialize(() => {
-            db.run(`CREATE TABLE IF NOT EXISTS locations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE
-            )`);
-            db.run(`CREATE TABLE IF NOT EXISTS items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                quantity INTEGER NOT NULL DEFAULT 1,
-                added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL
-            )`);
-            db.run("ALTER TABLE items ADD COLUMN location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL", function (err) {
-                // Ignore error if column already exists
-            });
-            db.run("ALTER TABLE items ADD COLUMN package_size REAL", function (err) {
-                // Ignore error if column already exists
-            });
-            db.run("ALTER TABLE items ADD COLUMN package_unit TEXT", function (err) {
-                // Ignore error if column already exists
-            });
-            db.run("ALTER TABLE items ADD COLUMN brand TEXT", function (err) {
-                // Ignore error if column already exists
-            });
-        });
+initDb().catch(err => {
+    console.error('Database initialization failed:', err);
+    process.exit(1);
+});
+
+// Helper to extract inserted ID across database engines
+function getInsertedId(result) {
+    if (Array.isArray(result) && result.length > 0) {
+        if (typeof result[0] === 'object') return result[0].id; // PostgreSQL
+        return result[0]; // SQLite, MySQL
+    }
+    return result;
+}
+
+// LOCATIONS
+app.get('/api/locations', async (req, res) => {
+    try {
+        const rows = await db(LOCATIONS_TABLE).orderBy('name', 'asc');
+        res.json({ locations: rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
-// LOCATIONS
-app.get('/api/locations', (req, res) => {
-    db.all('SELECT * FROM locations ORDER BY name ASC', [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ locations: rows });
-    });
-});
-
-app.post('/api/locations', (req, res) => {
+app.post('/api/locations', async (req, res) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
 
-    db.run('INSERT INTO locations (name) VALUES (?)', [name], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, name });
-    });
+    try {
+        const result = await db(LOCATIONS_TABLE).insert({ name }).returning('id');
+        const id = getInsertedId(result);
+        res.json({ id, name });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/locations/:id', (req, res) => {
+app.delete('/api/locations/:id', async (req, res) => {
     const { id } = req.params;
-    db.run('DELETE FROM locations WHERE id = ?', id, function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        db.run('UPDATE items SET location_id = NULL WHERE location_id = ?', id);
+    try {
+        await db(ITEMS_TABLE).where('location_id', id).update({ location_id: null });
+        await db(LOCATIONS_TABLE).where('id', id).del();
         res.json({ id });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // BRANDS
-app.get('/api/brands', (req, res) => {
-    db.all('SELECT DISTINCT brand FROM items WHERE brand IS NOT NULL AND brand != "" ORDER BY brand ASC', [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.get('/api/brands', async (req, res) => {
+    try {
+        const rows = await db(ITEMS_TABLE)
+            .distinct('brand')
+            .whereNotNull('brand')
+            .where('brand', '!=', '')
+            .orderBy('brand', 'asc');
         res.json({ brands: rows.map(r => r.brand) });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ITEMS
-app.get('/api/items', (req, res) => {
-    db.all(`
-        SELECT items.*, locations.name as location_name 
-        FROM items 
-        LEFT JOIN locations ON items.location_id = locations.id 
-        ORDER BY items.name ASC
-    `, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.get('/api/items', async (req, res) => {
+    try {
+        const rows = await db(ITEMS_TABLE)
+            .leftJoin(LOCATIONS_TABLE, `${ITEMS_TABLE}.location_id`, `${LOCATIONS_TABLE}.id`)
+            .select(`${ITEMS_TABLE}.*`, `${LOCATIONS_TABLE}.name as location_name`)
+            .orderBy(`${ITEMS_TABLE}.name`, 'asc');
         res.json({ items: rows });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/api/items', (req, res) => {
+app.post('/api/items', async (req, res) => {
     const { name, quantity, location_id, package_size, package_unit, brand } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
+
     const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
     const safeLocation = location_id || null;
     const safePackageSize = package_size && !isNaN(parseFloat(package_size)) ? parseFloat(package_size) : null;
@@ -109,52 +105,64 @@ app.post('/api/items', (req, res) => {
     const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
     const safeBrand = brand ? brand.trim() : null;
 
-    db.run(
-        'INSERT INTO items (name, quantity, location_id, package_size, package_unit, brand) VALUES (?, ?, ?, ?, ?, ?)',
-        [name, safeQuantity, safeLocation, safePackageSize, safePackageUnit, safeBrand],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ id: this.lastID, name, quantity: safeQuantity, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit, brand: safeBrand });
-        });
+    try {
+        const result = await db(ITEMS_TABLE).insert({
+            name,
+            quantity: safeQuantity,
+            location_id: safeLocation,
+            package_size: safePackageSize,
+            package_unit: safePackageUnit,
+            brand: safeBrand
+        }).returning('id');
+        const id = getInsertedId(result);
+        res.json({ id, name, quantity: safeQuantity, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit, brand: safeBrand });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/items/:id', (req, res) => {
+app.put('/api/items/:id', async (req, res) => {
     const { id } = req.params;
     const { name, quantity, brand, location_id, package_size, package_unit } = req.body;
 
-    // Handle quantity-only update (legacy/fast update)
-    if (quantity !== undefined && name === undefined) {
-        return db.run('UPDATE items SET quantity = ? WHERE id = ?', [parseInt(quantity), id], function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ id, quantity: parseInt(quantity) });
-        });
-    }
-
-    // Handle full item update
-    if (!name) return res.status(400).json({ error: "Name is required for full update" });
-    const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
-    const safeLocation = location_id || null;
-    const safePackageSize = package_size && !isNaN(parseFloat(package_size)) ? parseFloat(package_size) : null;
-    const validUnits = ['g', 'kg', 'l', 'ml'];
-    const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
-    const safeBrand = brand ? brand.trim() : null;
-
-    db.run(
-        'UPDATE items SET name = ?, quantity = ?, brand = ?, location_id = ?, package_size = ?, package_unit = ? WHERE id = ?',
-        [name, safeQuantity, safeBrand, safeLocation, safePackageSize, safePackageUnit, id],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ id, name, quantity: safeQuantity, brand: safeBrand, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit });
+    try {
+        // Handle quantity-only update (legacy/fast update)
+        if (quantity !== undefined && name === undefined) {
+            await db(ITEMS_TABLE).where('id', id).update({ quantity: parseInt(quantity) });
+            return res.json({ id, quantity: parseInt(quantity) });
         }
-    );
+
+        // Handle full item update
+        if (!name) return res.status(400).json({ error: "Name is required for full update" });
+        const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
+        const safeLocation = location_id || null;
+        const safePackageSize = package_size && !isNaN(parseFloat(package_size)) ? parseFloat(package_size) : null;
+        const validUnits = ['g', 'kg', 'l', 'ml'];
+        const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
+        const safeBrand = brand ? brand.trim() : null;
+
+        await db(ITEMS_TABLE).where('id', id).update({
+            name,
+            quantity: safeQuantity,
+            brand: safeBrand,
+            location_id: safeLocation,
+            package_size: safePackageSize,
+            package_unit: safePackageUnit
+        });
+        res.json({ id, name, quantity: safeQuantity, brand: safeBrand, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/items/:id', (req, res) => {
+app.delete('/api/items/:id', async (req, res) => {
     const { id } = req.params;
-    db.run('DELETE FROM items WHERE id = ?', id, function (err) {
-        if (err) return res.status(500).json({ error: err.message });
+    try {
+        await db(ITEMS_TABLE).where('id', id).del();
         res.json({ id });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
