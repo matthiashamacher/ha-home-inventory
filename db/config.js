@@ -7,6 +7,23 @@ const HA_DEFAULT_DB = '/config/home-assistant_v2.db';
 
 const LOCAL_FALLBACK_DB = path.join(__dirname, '..', 'data', 'local.db');
 
+// Home Assistant uses custom YAML tags that js-yaml doesn't understand.
+// Define a custom schema that treats them as pass-through values.
+const HA_CUSTOM_TAGS = [
+    'include', 'include_dir_list', 'include_dir_named',
+    'include_dir_merge_list', 'include_dir_merge_named',
+    'secret', 'env_var',
+];
+
+const HA_YAML_SCHEMA = yaml.DEFAULT_SCHEMA.extend(
+    HA_CUSTOM_TAGS.map(tag =>
+        new yaml.Type(`!${tag}`, {
+            kind: 'scalar',
+            construct: (data) => data,
+        })
+    )
+);
+
 function getRecorderDbUrl() {
     if (!fs.existsSync(HA_CONFIG_PATH)) {
         console.log('Home Assistant configuration not found. Using local SQLite fallback.');
@@ -15,7 +32,7 @@ function getRecorderDbUrl() {
 
     try {
         const configContent = fs.readFileSync(HA_CONFIG_PATH, 'utf8');
-        const config = yaml.load(configContent);
+        const config = yaml.load(configContent, { schema: HA_YAML_SCHEMA });
 
         if (config && config.recorder && config.recorder.db_url) {
             return config.recorder.db_url;

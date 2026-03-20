@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(timeout 5 node server.js)",
+      "Bash(node -e \":*)",
+      "Bash(cp data/local.db data/local.db.backup)",
+      "Bash(mv data/local.db.backup data/local.db)",
+      "Bash(rm -f data/local.db.migrated)",
+      "Bash(node -c server.js)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}
