@@ -79,6 +79,82 @@ app.get('/api/brands', async (req, res) => {
     }
 });
 
+// BARCODE LOOKUP
+app.get('/api/barcode/:code', async (req, res) => {
+    const { code } = req.params;
+    if (!code) return res.status(400).json({ error: 'Barcode is required' });
+
+    try {
+        // Check local DB for existing items with this barcode
+        const existingItems = await db(ITEMS_TABLE)
+            .leftJoin(LOCATIONS_TABLE, `${ITEMS_TABLE}.location_id`, `${LOCATIONS_TABLE}.id`)
+            .where(`${ITEMS_TABLE}.barcode`, code)
+            .select(`${ITEMS_TABLE}.id`, `${ITEMS_TABLE}.name`, `${ITEMS_TABLE}.brand`,
+                `${ITEMS_TABLE}.package_size`, `${ITEMS_TABLE}.package_unit`,
+                `${ITEMS_TABLE}.quantity`, `${ITEMS_TABLE}.location_id`,
+                `${LOCATIONS_TABLE}.name as location_name`);
+
+        // If we have local data, use it as product info
+        if (existingItems.length > 0) {
+            const first = existingItems[0];
+            return res.json({
+                found: true,
+                source: 'local',
+                product: {
+                    name: first.name,
+                    brand: first.brand,
+                    package_size: first.package_size,
+                    package_unit: first.package_unit,
+                    barcode: code
+                },
+                existing_items: existingItems.map(i => ({
+                    id: i.id, location_id: i.location_id,
+                    location_name: i.location_name, quantity: i.quantity
+                }))
+            });
+        }
+
+        // Lookup on Open Food Facts
+        const offRes = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`, {
+            headers: { 'User-Agent': 'CellarStorage/1.0 (Home Assistant Add-on)' }
+        });
+        const offData = await offRes.json();
+
+        if (offData.status === 1 && offData.product) {
+            const p = offData.product;
+            const name = p.product_name || p.product_name_en || p.generic_name || '';
+            const brand = p.brands ? p.brands.split(',')[0].trim() : null;
+
+            // Parse quantity string like "500ml", "1.5 L", "750 g"
+            let package_size = null;
+            let package_unit = null;
+            if (p.quantity) {
+                const match = p.quantity.match(/^([\d.,]+)\s*(g|kg|ml|l|cl)\b/i);
+                if (match) {
+                    package_size = parseFloat(match[1].replace(',', '.'));
+                    package_unit = match[2].toLowerCase();
+                    if (package_unit === 'cl') {
+                        package_size = package_size * 10;
+                        package_unit = 'ml';
+                    }
+                }
+            }
+
+            return res.json({
+                found: true,
+                source: 'openfoodfacts',
+                product: { name, brand, package_size, package_unit, barcode: code },
+                existing_items: []
+            });
+        }
+
+        res.json({ found: false, product: { barcode: code }, existing_items: [] });
+    } catch (err) {
+        console.error('Barcode lookup error:', err.message);
+        res.json({ found: false, product: { barcode: code }, existing_items: [], error: err.message });
+    }
+});
+
 // ITEMS
 app.get('/api/items', async (req, res) => {
     try {
@@ -93,7 +169,7 @@ app.get('/api/items', async (req, res) => {
 });
 
 app.post('/api/items', async (req, res) => {
-    const { name, quantity, location_id, package_size, package_unit, brand } = req.body;
+    const { name, quantity, location_id, package_size, package_unit, brand, barcode } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
 
     const safeQuantity = quantity || parseInt(quantity) === 0 ? parseInt(quantity) : 1;
@@ -102,6 +178,7 @@ app.post('/api/items', async (req, res) => {
     const validUnits = ['g', 'kg', 'l', 'ml'];
     const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
     const safeBrand = brand ? brand.trim() : null;
+    const safeBarcode = barcode ? barcode.trim() : null;
 
     try {
         const result = await db(ITEMS_TABLE).insert({
@@ -110,10 +187,11 @@ app.post('/api/items', async (req, res) => {
             location_id: safeLocation,
             package_size: safePackageSize,
             package_unit: safePackageUnit,
-            brand: safeBrand
+            brand: safeBrand,
+            barcode: safeBarcode
         }).returning('id');
         const id = getInsertedId(result);
-        res.json({ id, name, quantity: safeQuantity, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit, brand: safeBrand });
+        res.json({ id, name, quantity: safeQuantity, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit, brand: safeBrand, barcode: safeBarcode });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -121,7 +199,7 @@ app.post('/api/items', async (req, res) => {
 
 app.put('/api/items/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, quantity, brand, location_id, package_size, package_unit } = req.body;
+    const { name, quantity, brand, location_id, package_size, package_unit, barcode } = req.body;
 
     try {
         // Handle quantity-only update (legacy/fast update)
@@ -138,6 +216,7 @@ app.put('/api/items/:id', async (req, res) => {
         const validUnits = ['g', 'kg', 'l', 'ml'];
         const safePackageUnit = validUnits.includes(package_unit) ? package_unit : null;
         const safeBrand = brand ? brand.trim() : null;
+        const safeBarcode = barcode ? barcode.trim() : null;
 
         await db(ITEMS_TABLE).where('id', id).update({
             name,
@@ -145,9 +224,10 @@ app.put('/api/items/:id', async (req, res) => {
             brand: safeBrand,
             location_id: safeLocation,
             package_size: safePackageSize,
-            package_unit: safePackageUnit
+            package_unit: safePackageUnit,
+            barcode: safeBarcode
         });
-        res.json({ id, name, quantity: safeQuantity, brand: safeBrand, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit });
+        res.json({ id, name, quantity: safeQuantity, brand: safeBrand, location_id: safeLocation, package_size: safePackageSize, package_unit: safePackageUnit, barcode: safeBarcode });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

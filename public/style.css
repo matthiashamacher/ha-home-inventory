@@ -520,3 +520,38 @@ details[open] summary {
     width: 1%;
     white-space: nowrap;
 }
+
+/* Scan Modal */
+.scan-modal-content {
+    max-width: 500px;
+}
+
+.scan-step {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.scan-step.hidden {
+    display: none;
+}
+
+#scan-reader {
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#scan-status {
+    text-align: center;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.scan-duplicate {
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+    padding: 0.75rem;
+    font-size: 0.9rem;
+}

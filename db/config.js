@@ -1,12 +1,16 @@
 const fs = require('fs');
+const path = require('path');
 const yaml = require('js-yaml');
 
 const HA_CONFIG_PATH = '/config/configuration.yaml';
 const HA_DEFAULT_DB = '/config/home-assistant_v2.db';
 
+const LOCAL_FALLBACK_DB = path.join(__dirname, '..', 'data', 'local.db');
+
 function getRecorderDbUrl() {
     if (!fs.existsSync(HA_CONFIG_PATH)) {
-        throw new Error('Home Assistant configuration not found. This add-on must run within Home Assistant.');
+        console.log('Home Assistant configuration not found. Using local SQLite fallback.');
+        return `sqlite:///${LOCAL_FALLBACK_DB}`;
     }
 
     try {

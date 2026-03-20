@@ -24,6 +24,14 @@ async function ensureSchema(knex) {
         });
         console.log(`Created table: ${ITEMS_TABLE}`);
     }
+
+    // Migration: add barcode column if missing
+    if (!(await knex.schema.hasColumn(ITEMS_TABLE, 'barcode'))) {
+        await knex.schema.alterTable(ITEMS_TABLE, (table) => {
+            table.string('barcode').nullable().index();
+        });
+        console.log(`Added barcode column to ${ITEMS_TABLE}`);
+    }
 }
 
 module.exports = { ensureSchema, LOCATIONS_TABLE, ITEMS_TABLE };

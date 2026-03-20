@@ -526,6 +526,255 @@ document.addEventListener('DOMContentLoaded', () => {
         return div.innerHTML;
     };
 
+    // ========== BARCODE SCANNING ==========
+    const scanBtn = document.getElementById('scan-btn');
+    const scanModal = document.getElementById('scan-modal');
+    const closeScanModalBtn = document.getElementById('close-scan-modal-btn');
+    const scanStep1 = document.getElementById('scan-step-1');
+    const scanStep2 = document.getElementById('scan-step-2');
+    const scanStep3 = document.getElementById('scan-step-3');
+    const scanModalTitle = document.getElementById('scan-modal-title');
+    const scanLocationSelect = document.getElementById('scan-location');
+    const scanStartBtn = document.getElementById('scan-start-btn');
+    const scanStatus = document.getElementById('scan-status');
+    const scanItemName = document.getElementById('scan-item-name');
+    const scanItemBrand = document.getElementById('scan-item-brand');
+    const scanPackageSize = document.getElementById('scan-package-size');
+    const scanPackageUnit = document.getElementById('scan-package-unit');
+    const scanQuantity = document.getElementById('scan-quantity');
+    const scanBarcodeDisplay = document.getElementById('scan-barcode-display');
+    const scanDuplicateNotice = document.getElementById('scan-duplicate-notice');
+    const scanSaveNextBtn = document.getElementById('scan-save-next-btn');
+    const scanSaveCloseBtn = document.getElementById('scan-save-close-btn');
+
+    let scanLocationId = null;
+    let scannedBarcode = null;
+    let html5QrCode = null;
+    let existingItemForBarcode = null;
+
+    const showScanStep = (step) => {
+        scanStep1.classList.add('hidden');
+        scanStep2.classList.add('hidden');
+        scanStep3.classList.add('hidden');
+        if (step === 1) {
+            scanStep1.classList.remove('hidden');
+            scanModalTitle.textContent = 'Scan Barcode';
+        } else if (step === 2) {
+            scanStep2.classList.remove('hidden');
+            scanModalTitle.textContent = 'Scanning...';
+        } else if (step === 3) {
+            scanStep3.classList.remove('hidden');
+            scanModalTitle.textContent = 'Confirm Item';
+        }
+    };
+
+    const populateScanLocationSelect = () => {
+        scanLocationSelect.innerHTML = '<option value="">Unassigned Location</option>' +
+            locations.map(loc => `<option value="${loc.id}">${escapeHTML(loc.name)}</option>`).join('');
+    };
+
+    const populateScanBrandSelect = (selectedBrand) => {
+        const brands = Array.from(brandSelect.options)
+            .map(o => o.value)
+            .filter(v => v !== '__NEW__' && v !== '');
+
+        scanItemBrand.innerHTML = '<option value="">No Brand</option>' +
+            brands.map(b => `<option value="${b}">${escapeHTML(b)}</option>`).join('');
+
+        if (selectedBrand) {
+            if (!brands.includes(selectedBrand)) {
+                const opt = document.createElement('option');
+                opt.value = selectedBrand;
+                opt.textContent = selectedBrand;
+                scanItemBrand.appendChild(opt);
+            }
+            scanItemBrand.value = selectedBrand;
+        }
+    };
+
+    const stopScanner = async () => {
+        if (html5QrCode) {
+            try {
+                const state = html5QrCode.getState();
+                if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+                    await html5QrCode.stop();
+                }
+            } catch (e) {
+                // ignore
+            }
+            html5QrCode = null;
+        }
+    };
+
+    const startScanner = async () => {
+        showScanStep(2);
+        scanStatus.textContent = 'Point camera at a barcode...';
+
+        await stopScanner();
+        html5QrCode = new Html5Qrcode('scan-reader');
+
+        try {
+            await html5QrCode.start(
+                { facingMode: 'environment' },
+                {
+                    fps: 10,
+                    qrbox: { width: 250, height: 150 },
+                    formatsToSupport: [
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.EAN_8,
+                        Html5QrcodeSupportedFormats.UPC_A,
+                        Html5QrcodeSupportedFormats.UPC_E,
+                        Html5QrcodeSupportedFormats.CODE_128
+                    ]
+                },
+                onBarcodeScanned,
+                () => {} // ignore scan failures
+            );
+        } catch (err) {
+            console.error('Scanner error:', err);
+            scanStatus.textContent = 'Camera access denied or unavailable. Please allow camera access and try again.';
+        }
+    };
+
+    const onBarcodeScanned = async (decodedText) => {
+        scannedBarcode = decodedText;
+        await stopScanner();
+
+        scanStatus.textContent = 'Looking up product...';
+        showScanStep(3);
+
+        // Reset form
+        scanItemName.value = '';
+        scanItemBrand.value = '';
+        scanPackageSize.value = '';
+        scanPackageUnit.value = '';
+        scanQuantity.value = '1';
+        scanBarcodeDisplay.textContent = `Barcode: ${scannedBarcode}`;
+        scanDuplicateNotice.classList.add('hidden');
+        existingItemForBarcode = null;
+
+        try {
+            const res = await fetch(`api/barcode/${encodeURIComponent(scannedBarcode)}`);
+            const data = await res.json();
+
+            if (data.found && data.product) {
+                scanItemName.value = data.product.name || '';
+                populateScanBrandSelect(data.product.brand || '');
+                scanPackageSize.value = data.product.package_size || '';
+                scanPackageUnit.value = data.product.package_unit || '';
+            } else {
+                populateScanBrandSelect('');
+            }
+
+            // Check for duplicate at same location
+            if (data.existing_items && data.existing_items.length > 0) {
+                const match = data.existing_items.find(i =>
+                    String(i.location_id) === String(scanLocationId) ||
+                    (!i.location_id && !scanLocationId)
+                );
+                if (match) {
+                    existingItemForBarcode = match;
+                    const locName = match.location_name || 'Unassigned';
+                    scanDuplicateNotice.textContent = `Already exists at ${locName} with quantity ${match.quantity}. Saving will add to its quantity.`;
+                    scanDuplicateNotice.classList.remove('hidden');
+                }
+            }
+        } catch (err) {
+            console.error('Barcode lookup failed:', err);
+            populateScanBrandSelect('');
+        }
+    };
+
+    const saveScanItem = async () => {
+        const name = scanItemName.value.trim();
+        if (!name) {
+            alert('Item name is required');
+            return false;
+        }
+
+        const quantity = parseInt(scanQuantity.value, 10) || 1;
+
+        try {
+            if (existingItemForBarcode) {
+                // Increment quantity on existing item
+                const newQty = existingItemForBarcode.quantity + quantity;
+                const res = await fetch(`${API_BASE}/${existingItemForBarcode.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quantity: newQty })
+                });
+                if (!res.ok) throw new Error('Failed to update item');
+            } else {
+                // Create new item
+                const res = await fetch(API_BASE, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        quantity,
+                        location_id: scanLocationId || null,
+                        package_size: scanPackageSize.value ? parseFloat(scanPackageSize.value) : null,
+                        package_unit: scanPackageUnit.value || null,
+                        brand: scanItemBrand.value || null,
+                        barcode: scannedBarcode || null
+                    })
+                });
+                if (!res.ok) throw new Error('Failed to add item');
+            }
+
+            await fetchBrands();
+            await fetchItems();
+            return true;
+        } catch (err) {
+            console.error(err);
+            alert('Failed to save item');
+            return false;
+        }
+    };
+
+    const closeScanModal = async () => {
+        await stopScanner();
+        scanModal.classList.add('hidden');
+        scanLocationId = null;
+        scannedBarcode = null;
+        existingItemForBarcode = null;
+    };
+
+    // Open scan modal
+    scanBtn.addEventListener('click', () => {
+        populateScanLocationSelect();
+        showScanStep(1);
+        scanModal.classList.remove('hidden');
+    });
+
+    // Close scan modal
+    closeScanModalBtn.addEventListener('click', closeScanModal);
+    scanModal.addEventListener('click', (e) => {
+        if (e.target === scanModal) closeScanModal();
+    });
+
+    // Step 1 → Step 2
+    scanStartBtn.addEventListener('click', () => {
+        scanLocationId = scanLocationSelect.value || null;
+        startScanner();
+    });
+
+    // Save & Scan Next → back to step 2 with same location
+    scanSaveNextBtn.addEventListener('click', async () => {
+        const saved = await saveScanItem();
+        if (saved) {
+            startScanner();
+        }
+    });
+
+    // Save & Close → save and close modal
+    scanSaveCloseBtn.addEventListener('click', async () => {
+        const saved = await saveScanItem();
+        if (saved) {
+            closeScanModal();
+        }
+    });
+
     // Initialization
     const init = async () => {
         await fetchLocations();

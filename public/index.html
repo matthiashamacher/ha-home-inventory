@@ -14,7 +14,10 @@
         <header>
             <h1>Home Inventory</h1>
             <p>Track your supplies easily</p>
-            <button id="manage-locations-btn" class="btn-secondary" style="margin-top: 1rem;">Manage Locations</button>
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+                <button id="scan-btn" class="btn-primary">Scan Barcode</button>
+                <button id="manage-locations-btn" class="btn-secondary">Manage Locations</button>
+            </div>
         </header>
 
         <section class="add-item-section">
@@ -107,6 +110,58 @@
         </div>
     </div>
 
+    <!-- Scan Barcode Modal -->
+    <div id="scan-modal" class="modal hidden">
+        <div class="modal-content scan-modal-content">
+            <div class="modal-header">
+                <h2 id="scan-modal-title">Scan Barcode</h2>
+                <button id="close-scan-modal-btn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Step 1: Location Selection -->
+                <div id="scan-step-1" class="scan-step">
+                    <label for="scan-location">Select Location</label>
+                    <select id="scan-location" class="location-select" style="width: 100%;">
+                        <option value="">Unassigned Location</option>
+                    </select>
+                    <button id="scan-start-btn" class="btn-primary" style="width: 100%; margin-top: 0.5rem;">Start Scanning</button>
+                </div>
+
+                <!-- Step 2: Camera Scanner -->
+                <div id="scan-step-2" class="scan-step hidden">
+                    <div id="scan-reader"></div>
+                    <p id="scan-status">Point camera at a barcode...</p>
+                </div>
+
+                <!-- Step 3: Confirm & Save -->
+                <div id="scan-step-3" class="scan-step hidden">
+                    <p id="scan-barcode-display" style="font-size: 0.85rem; color: var(--text-muted); text-align: center;"></p>
+                    <div id="scan-duplicate-notice" class="scan-duplicate hidden"></div>
+                    <input type="text" id="scan-item-name" placeholder="Item Name" required autocomplete="off">
+                    <select id="scan-item-brand" class="location-select" style="width: 100%;">
+                        <option value="">No Brand</option>
+                    </select>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="number" id="scan-package-size" placeholder="Size" min="0" step="any" style="flex: 1;">
+                        <select id="scan-package-unit" class="location-select" style="width: 100px;">
+                            <option value="">Unit</option>
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                            <option value="ml">ml</option>
+                            <option value="l">l</option>
+                        </select>
+                    </div>
+                    <input type="number" id="scan-quantity" placeholder="Quantity" value="1" min="1">
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button id="scan-save-next-btn" class="btn-primary" style="flex: 1;">Save & Scan Next</button>
+                        <button id="scan-save-close-btn" class="btn-secondary" style="flex: 1;">Save & Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="app.js"></script>
 </body>
 
