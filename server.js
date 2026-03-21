@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
-const Jimp = require('jimp');
+const sharp = require('sharp');
 const zbar = require('zbar-wasm');
 const db = require('./db/connection');
 const { ensureSchema, LOCATIONS_TABLE, ITEMS_TABLE } = require('./db/schema');
@@ -96,12 +96,14 @@ app.post('/api/barcode/scan', upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No image provided' });
 
     try {
-        const image = await Jimp.read(req.file.buffer);
-        const { data, width, height } = image.bitmap;
+        const { data, info } = await sharp(req.file.buffer)
+            .ensureAlpha()
+            .raw()
+            .toBuffer({ resolveWithObject: true });
         const imageData = {
             data: new Uint8ClampedArray(data.buffer),
-            width,
-            height,
+            width: info.width,
+            height: info.height,
         };
         const results = await zbar.scanImageData(imageData);
 
