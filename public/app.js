@@ -606,6 +606,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const handleFileCapture = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        scanStatus.textContent = 'Scanning image for barcode...';
+
+        try {
+            const tempScanner = new Html5Qrcode('scan-reader');
+            const result = await tempScanner.scanFile(file, /* showImage */ true);
+            await tempScanner.clear();
+            onBarcodeScanned(result);
+        } catch (err) {
+            console.error('Image scan failed:', err);
+            showImageFallback('No barcode found in image. Please try again with a clearer photo.');
+        }
+    };
+
+    const showImageFallback = (message) => {
+        const text = message || 'Camera access is not available.<br>Use the button below to take a photo of the barcode instead.';
+        scanStatus.innerHTML =
+            text +
+            '<br><br>' +
+            '<label style="display:inline-block;padding:10px 20px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:500;">' +
+            'Take photo / Choose image' +
+            '<input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none;">' +
+            '</label>';
+
+        document.getElementById('scan-file-input').addEventListener('change', handleFileCapture);
+    };
+
     const startScanner = async () => {
         showScanStep(2);
         scanStatus.textContent = 'Point camera at a barcode...';
@@ -632,24 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         } catch (err) {
             console.error('Scanner error:', err);
-
-            const inIframe = window.self !== window.top;
-            if (inIframe) {
-                scanStatus.innerHTML =
-                    'Camera access is blocked inside the Home Assistant panel. ' +
-                    '<br><br>' +
-                    '<button id="scan-popup-btn" style="padding:8px 16px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;">' +
-                    'Open scanner in new window' +
-                    '</button>';
-                document.getElementById('scan-popup-btn').addEventListener('click', () => {
-                    const port = location.port || (location.protocol === 'https:' ? '443' : '80');
-                    const directUrl = `${location.protocol}//${location.hostname}:${port}/?scan=1`;
-                    window.open(directUrl, '_blank', 'width=500,height=700');
-                    closeScanModal();
-                });
-            } else {
-                scanStatus.textContent = 'Camera access denied or unavailable. Please allow camera access and try again.';
-            }
+            showImageFallback();
         }
     };
 
@@ -797,14 +810,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchLocations();
         await fetchBrands();
         await fetchItems();
-
-        // Auto-open scanner when launched via popup with ?scan=1
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('scan') === '1') {
-            populateScanLocationSelect();
-            showScanStep(1);
-            scanModal.classList.remove('hidden');
-        }
     };
 
     init();
