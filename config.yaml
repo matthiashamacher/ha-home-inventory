@@ -1,6 +1,6 @@
 name: "Home Inventory"
 description: "Tracks supplies, capable of setting quantity to keep track of items."
-version: "3.1.1"
+version: "3.1.2"
 slug: "home_inventory"
 init: false
 arch:
