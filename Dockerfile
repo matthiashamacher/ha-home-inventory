@@ -12,8 +12,7 @@ RUN apk add --no-cache \
     make \
     g++ \
     mariadb-connector-c-dev \
-    postgresql-dev \
-    vips-dev
+    postgresql-dev
 
 # Create app directory
 WORKDIR /app

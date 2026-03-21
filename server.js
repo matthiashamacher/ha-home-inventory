@@ -2,8 +2,6 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
-const sharp = require('sharp');
-const zbar = require('zbar-wasm');
 const db = require('./db/connection');
 const { ensureSchema, LOCATIONS_TABLE, ITEMS_TABLE } = require('./db/schema');
 
@@ -96,20 +94,15 @@ app.post('/api/barcode/scan', upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No image provided' });
 
     try {
-        const { data, info } = await sharp(req.file.buffer)
-            .ensureAlpha()
-            .raw()
-            .toBuffer({ resolveWithObject: true });
-        const imageData = {
-            data: new Uint8ClampedArray(data.buffer),
-            width: info.width,
-            height: info.height,
-        };
-        const results = await zbar.scanImageData(imageData);
+        const { readBarcodes } = await import('zxing-wasm/reader');
+        const blob = new Blob([req.file.buffer]);
+        const results = await readBarcodes(blob, {
+            formats: ['EAN-13', 'EAN-8', 'UPC-A', 'UPC-E', 'Code128'],
+            tryHarder: true,
+        });
 
         if (results.length > 0) {
-            const barcode = results[0].decode();
-            return res.json({ found: true, barcode });
+            return res.json({ found: true, barcode: results[0].text });
         }
 
         res.json({ found: false });
