@@ -9,6 +9,13 @@ const PORT = process.env.PORT || 8099;
 
 app.use(cors());
 app.use(express.json());
+
+// Allow camera access when embedded in Home Assistant ingress iframe
+app.use((req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=*');
+    next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize database

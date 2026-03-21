@@ -632,7 +632,24 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         } catch (err) {
             console.error('Scanner error:', err);
-            scanStatus.textContent = 'Camera access denied or unavailable. Please allow camera access and try again.';
+
+            const inIframe = window.self !== window.top;
+            if (inIframe) {
+                scanStatus.innerHTML =
+                    'Camera access is blocked inside the Home Assistant panel. ' +
+                    '<br><br>' +
+                    '<button id="scan-popup-btn" style="padding:8px 16px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;">' +
+                    'Open scanner in new window' +
+                    '</button>';
+                document.getElementById('scan-popup-btn').addEventListener('click', () => {
+                    const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+                    const directUrl = `${location.protocol}//${location.hostname}:${port}/?scan=1`;
+                    window.open(directUrl, '_blank', 'width=500,height=700');
+                    closeScanModal();
+                });
+            } else {
+                scanStatus.textContent = 'Camera access denied or unavailable. Please allow camera access and try again.';
+            }
         }
     };
 
@@ -780,6 +797,14 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchLocations();
         await fetchBrands();
         await fetchItems();
+
+        // Auto-open scanner when launched via popup with ?scan=1
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('scan') === '1') {
+            populateScanLocationSelect();
+            showScanStep(1);
+            scanModal.classList.remove('hidden');
+        }
     };
 
     init();
