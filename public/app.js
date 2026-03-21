@@ -606,38 +606,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const BARCODE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
-
-    const detectBarcodeNative = async (file) => {
-        if (!('BarcodeDetector' in window)) return null;
-
-        const bitmap = await createImageBitmap(file);
-        const detector = new BarcodeDetector({ formats: BARCODE_FORMATS });
-        const results = await detector.detect(bitmap);
-        bitmap.close();
-
-        if (results.length > 0) return results[0].rawValue;
-        return null;
-    };
-
-    const detectBarcodeHtml5 = async (file) => {
-        const config = {
-            formatsToSupport: [
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E,
-                Html5QrcodeSupportedFormats.CODE_128
-            ]
-        };
-        const tempScanner = new Html5Qrcode('scan-reader', config);
-        try {
-            return await tempScanner.scanFile(file, false);
-        } finally {
-            await tempScanner.clear();
-        }
-    };
-
     const handleFileCapture = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -645,33 +613,66 @@ document.addEventListener('DOMContentLoaded', () => {
         scanStatus.textContent = 'Scanning image for barcode...';
 
         try {
-            // Try native BarcodeDetector first (more reliable with real photos)
-            const nativeResult = await detectBarcodeNative(file);
-            if (nativeResult) {
-                onBarcodeScanned(nativeResult);
+            // Try native BarcodeDetector first (fast, no network)
+            if ('BarcodeDetector' in window) {
+                const bitmap = await createImageBitmap(file);
+                const detector = new BarcodeDetector({
+                    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']
+                });
+                const results = await detector.detect(bitmap);
+                bitmap.close();
+                if (results.length > 0) {
+                    onBarcodeScanned(results[0].rawValue);
+                    return;
+                }
+            }
+
+            // Upload to server for zbar-wasm detection
+            scanStatus.textContent = 'Processing image on server...';
+            const formData = new FormData();
+            formData.append('image', file);
+            const resp = await fetch(API + '/barcode/scan', { method: 'POST', body: formData });
+            const data = await resp.json();
+
+            if (data.found) {
+                onBarcodeScanned(data.barcode);
                 return;
             }
 
-            // Fall back to html5-qrcode
-            const fallbackResult = await detectBarcodeHtml5(file);
-            onBarcodeScanned(fallbackResult);
+            showImageFallback('No barcode found in image. Try again or enter the number manually.');
         } catch (err) {
             console.error('Image scan failed:', err);
-            showImageFallback('No barcode found in image. Please try again with a clearer photo.');
+            showImageFallback('Scan failed. Try again or enter the barcode number manually.');
         }
     };
 
+    const handleManualEntry = () => {
+        const input = document.getElementById('scan-manual-input');
+        const code = input.value.trim();
+        if (!code) return;
+        onBarcodeScanned(code);
+    };
+
     const showImageFallback = (message) => {
-        const text = message || 'Camera access is not available.<br>Use the button below to take a photo of the barcode instead.';
+        const text = message || 'Camera access is not available.';
         scanStatus.innerHTML =
             text +
             '<br><br>' +
             '<label style="display:inline-block;padding:10px 20px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:500;">' +
-            'Take photo / Choose image' +
+            '📷 Take photo / Choose image' +
             '<input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none;">' +
-            '</label>';
+            '</label>' +
+            '<div style="margin-top:1rem;display:flex;gap:0.5rem;align-items:center;">' +
+            '<input type="text" id="scan-manual-input" placeholder="Or enter barcode number..." ' +
+            'style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:1rem;">' +
+            '<button id="scan-manual-btn" class="btn-primary" style="padding:8px 16px;white-space:nowrap;">Look up</button>' +
+            '</div>';
 
         document.getElementById('scan-file-input').addEventListener('change', handleFileCapture);
+        document.getElementById('scan-manual-btn').addEventListener('click', handleManualEntry);
+        document.getElementById('scan-manual-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); handleManualEntry(); }
+        });
     };
 
     const startScanner = async () => {

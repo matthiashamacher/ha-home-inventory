@@ -1,8 +1,13 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const multer = require('multer');
+const Jimp = require('jimp');
+const zbar = require('zbar-wasm');
 const db = require('./db/connection');
 const { ensureSchema, LOCATIONS_TABLE, ITEMS_TABLE } = require('./db/schema');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const app = express();
 const PORT = process.env.PORT || 8099;
@@ -83,6 +88,32 @@ app.get('/api/brands', async (req, res) => {
         res.json({ brands: rows.map(r => r.brand) });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// SERVER-SIDE BARCODE DETECTION FROM IMAGE
+app.post('/api/barcode/scan', upload.single('image'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No image provided' });
+
+    try {
+        const image = await Jimp.read(req.file.buffer);
+        const { data, width, height } = image.bitmap;
+        const imageData = {
+            data: new Uint8ClampedArray(data.buffer),
+            width,
+            height,
+        };
+        const results = await zbar.scanImageData(imageData);
+
+        if (results.length > 0) {
+            const barcode = results[0].decode();
+            return res.json({ found: true, barcode });
+        }
+
+        res.json({ found: false });
+    } catch (err) {
+        console.error('Barcode scan error:', err);
+        res.status(500).json({ error: 'Failed to process image' });
     }
 });
 
