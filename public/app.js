@@ -614,7 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const tempScanner = new Html5Qrcode('scan-reader');
-            const result = await tempScanner.scanFile(file, /* showImage */ true);
+            const result = await tempScanner.scanFile(file, /* showImage */ false);
             await tempScanner.clear();
             onBarcodeScanned(result);
         } catch (err) {
