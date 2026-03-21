@@ -606,6 +606,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const BARCODE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
+
+    const detectBarcodeNative = async (file) => {
+        if (!('BarcodeDetector' in window)) return null;
+
+        const bitmap = await createImageBitmap(file);
+        const detector = new BarcodeDetector({ formats: BARCODE_FORMATS });
+        const results = await detector.detect(bitmap);
+        bitmap.close();
+
+        if (results.length > 0) return results[0].rawValue;
+        return null;
+    };
+
+    const detectBarcodeHtml5 = async (file) => {
+        const config = {
+            formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.CODE_128
+            ]
+        };
+        const tempScanner = new Html5Qrcode('scan-reader', config);
+        try {
+            return await tempScanner.scanFile(file, false);
+        } finally {
+            await tempScanner.clear();
+        }
+    };
+
     const handleFileCapture = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -613,10 +645,16 @@ document.addEventListener('DOMContentLoaded', () => {
         scanStatus.textContent = 'Scanning image for barcode...';
 
         try {
-            const tempScanner = new Html5Qrcode('scan-reader');
-            const result = await tempScanner.scanFile(file, /* showImage */ false);
-            await tempScanner.clear();
-            onBarcodeScanned(result);
+            // Try native BarcodeDetector first (more reliable with real photos)
+            const nativeResult = await detectBarcodeNative(file);
+            if (nativeResult) {
+                onBarcodeScanned(nativeResult);
+                return;
+            }
+
+            // Fall back to html5-qrcode
+            const fallbackResult = await detectBarcodeHtml5(file);
+            onBarcodeScanned(fallbackResult);
         } catch (err) {
             console.error('Image scan failed:', err);
             showImageFallback('No barcode found in image. Please try again with a clearer photo.');
