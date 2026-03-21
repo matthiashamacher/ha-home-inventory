@@ -7,22 +7,108 @@ const HA_DEFAULT_DB = '/config/home-assistant_v2.db';
 
 const LOCAL_FALLBACK_DB = path.join(__dirname, '..', 'data', 'local.db');
 
-// Home Assistant uses custom YAML tags that js-yaml doesn't understand.
-// Define a custom schema that treats them as pass-through values.
-const HA_CUSTOM_TAGS = [
-    'include', 'include_dir_list', 'include_dir_named',
-    'include_dir_merge_list', 'include_dir_merge_named',
-    'secret', 'env_var',
-];
+/**
+ * Load and resolve a Home Assistant YAML file, handling custom tags:
+ *   !include <file>                  → parse the referenced YAML file
+ *   !include_dir_list <dir>          → array of parsed YAML files in dir
+ *   !include_dir_named <dir>         → object keyed by filename (no ext)
+ *   !include_dir_merge_list <dir>    → flat array merged from all files
+ *   !include_dir_merge_named <dir>   → merged object from all files
+ *   !secret <key>                    → lookup in secrets.yaml
+ *   !env_var <name>                  → process.env lookup
+ */
+function loadHaYaml(filePath) {
+    const baseDir = path.dirname(filePath);
 
-const HA_YAML_SCHEMA = yaml.DEFAULT_SCHEMA.extend(
-    HA_CUSTOM_TAGS.map(tag =>
-        new yaml.Type(`!${tag}`, {
+    const customTypes = [
+        new yaml.Type('!include', {
             kind: 'scalar',
-            construct: (data) => data,
-        })
-    )
-);
+            construct: (data) => {
+                const target = path.resolve(baseDir, data);
+                if (!fs.existsSync(target)) return null;
+                return loadHaYaml(target);
+            },
+        }),
+        new yaml.Type('!include_dir_list', {
+            kind: 'scalar',
+            construct: (data) => {
+                const dir = path.resolve(baseDir, data);
+                return readYamlDir(dir).map(f => loadHaYaml(f));
+            },
+        }),
+        new yaml.Type('!include_dir_named', {
+            kind: 'scalar',
+            construct: (data) => {
+                const dir = path.resolve(baseDir, data);
+                const result = {};
+                for (const f of readYamlDir(dir)) {
+                    const key = path.basename(f, path.extname(f));
+                    result[key] = loadHaYaml(f);
+                }
+                return result;
+            },
+        }),
+        new yaml.Type('!include_dir_merge_list', {
+            kind: 'scalar',
+            construct: (data) => {
+                const dir = path.resolve(baseDir, data);
+                const result = [];
+                for (const f of readYamlDir(dir)) {
+                    const content = loadHaYaml(f);
+                    if (Array.isArray(content)) result.push(...content);
+                    else if (content != null) result.push(content);
+                }
+                return result;
+            },
+        }),
+        new yaml.Type('!include_dir_merge_named', {
+            kind: 'scalar',
+            construct: (data) => {
+                const dir = path.resolve(baseDir, data);
+                const result = {};
+                for (const f of readYamlDir(dir)) {
+                    const content = loadHaYaml(f);
+                    if (content && typeof content === 'object' && !Array.isArray(content)) {
+                        Object.assign(result, content);
+                    }
+                }
+                return result;
+            },
+        }),
+        new yaml.Type('!secret', {
+            kind: 'scalar',
+            construct: (data) => {
+                const secretsPath = path.resolve(baseDir, 'secrets.yaml');
+                if (!fs.existsSync(secretsPath)) return data;
+                try {
+                    const secrets = yaml.load(fs.readFileSync(secretsPath, 'utf8'));
+                    return (secrets && secrets[data]) || data;
+                } catch {
+                    return data;
+                }
+            },
+        }),
+        new yaml.Type('!env_var', {
+            kind: 'scalar',
+            construct: (data) => process.env[data] || data,
+        }),
+    ];
+
+    const schema = yaml.DEFAULT_SCHEMA.extend(customTypes);
+    const content = fs.readFileSync(filePath, 'utf8');
+    return yaml.load(content, { schema });
+}
+
+/**
+ * Return sorted list of .yaml/.yml files in a directory.
+ */
+function readYamlDir(dir) {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+        .filter(f => /\.ya?ml$/.test(f))
+        .sort()
+        .map(f => path.join(dir, f));
+}
 
 function getRecorderDbUrl() {
     if (!fs.existsSync(HA_CONFIG_PATH)) {
@@ -31,8 +117,7 @@ function getRecorderDbUrl() {
     }
 
     try {
-        const configContent = fs.readFileSync(HA_CONFIG_PATH, 'utf8');
-        const config = yaml.load(configContent, { schema: HA_YAML_SCHEMA });
+        const config = loadHaYaml(HA_CONFIG_PATH);
 
         if (config && config.recorder && config.recorder.db_url) {
             return config.recorder.db_url;
